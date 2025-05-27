@@ -36,8 +36,18 @@ class GraphVisualizer {
         this.zoom = d3.zoom()
             .scaleExtent([0.1, 10])
             .filter(event => {
-                // Only allow middle mouse button for pan/zoom
-                return event.button === 1 || event.type === 'wheel';
+                // Allow mouse wheel for zoom always
+                if (event.type === 'wheel') return true;
+                
+                // For mouse events, only allow pan if not clicking on a node
+                if (event.type === 'mousedown') {
+                    const target = event.target;
+                    // Check if clicking on a node (circle or text inside a node group)
+                    const isNode = target.closest('.node') !== null;
+                    return !isNode; // Only allow pan if NOT clicking on a node
+                }
+                
+                return event.button === 0; // Left mouse button
             })
             .on('zoom', (event) => {
                 this.transform = event.transform;
@@ -48,13 +58,6 @@ class GraphVisualizer {
             });
 
         this.svg.call(this.zoom);
-        
-        // Prevent default middle mouse button behavior
-        this.svg.on('mousedown', (event) => {
-            if (event.button === 1) {
-                event.preventDefault();
-            }
-        });
     }
 
     zoomIn() {
@@ -481,9 +484,10 @@ class GraphVisualizer {
             .enter().append('g')
             .attr('class', 'node')
             .call(d3.drag()
-                .on('start', d => this.dragStarted(d))
-                .on('drag', d => this.dragged(d))
-                .on('end', d => this.dragEnded(d)));
+                .filter(event => event.button === 0) // Only left mouse button
+                .on('start', (event, d) => this.dragStarted(event, d))
+                .on('drag', (event, d) => this.dragged(event, d))
+                .on('end', (event, d) => this.dragEnded(event, d)));
 
         node.append('circle')
             .attr('r', d => d.type === 'component' ? 20 : 15)
@@ -525,17 +529,26 @@ class GraphVisualizer {
     }
 
     dragStarted(event, d) {
+        // Prevent zoom/pan during node drag
+        event.stopPropagation();
+        
         if (!event.active) this.simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
     }
 
     dragged(event, d) {
+        // Prevent zoom/pan during node drag
+        event.stopPropagation();
+        
         d.fx = event.x;
         d.fy = event.y;
     }
 
     dragEnded(event, d) {
+        // Prevent zoom/pan during node drag
+        event.stopPropagation();
+        
         if (!event.active) this.simulation.alphaTarget(0);
         d.fx = null;
         d.fy = null;

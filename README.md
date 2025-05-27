@@ -55,7 +55,8 @@ react-analyzer -e ./src --ignore "tests,stories,docs"
 ### Web Interface
 
 The interactive web interface provides:
-- 🎨 **Pan/Zoom Controls**: Mouse wheel zoom, middle-click drag
+- 🎨 **Pan/Zoom Controls**: Mouse wheel zoom, left-click drag on empty space to pan
+- 🖱️ **Node Interaction**: Left-click drag nodes to reposition them
 - 📊 **Real-time Progress**: See analysis progress file-by-file
 - 🎯 **Interactive Tooltips**: Hover for detailed component information
 - 🔄 **Live Updates**: Dynamic graph updates during analysis
