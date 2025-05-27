@@ -9,6 +9,7 @@ class GraphVisualizer {
         this.simulation = null;
         this.zoom = null;
         this.transform = d3.zoomIdentity;
+        this.cycleClickHandler = null;
         
         this.setupEventListeners();
         this.setupTooltip();
@@ -26,6 +27,21 @@ class GraphVisualizer {
         document.getElementById('zoomIn').addEventListener('click', () => this.zoomIn());
         document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
         document.getElementById('zoomReset').addEventListener('click', () => this.zoomReset());
+
+        // Modal controls
+        document.getElementById('modalClose').addEventListener('click', () => this.hideModal());
+        document.getElementById('cyclesModal').addEventListener('click', (e) => {
+            if (e.target.id === 'cyclesModal') {
+                this.hideModal();
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.hideModal();
+            }
+        });
     }
 
     setupTooltip() {
@@ -82,7 +98,7 @@ class GraphVisualizer {
     resize() {
         const container = document.getElementById('graph-container');
         this.width = container.clientWidth;
-        this.height = container.clientHeight;
+        this.height = container.clientHeight - 60 - 86;
         
         this.svg
             .attr('width', this.width)
@@ -584,41 +600,73 @@ class GraphVisualizer {
         
         document.getElementById('stats').style.display = 'grid';
         
+        // Store cycles and node info for modal display
+        this.cycles = data.cycles;
+        this.nodeInfo = this.buildNodeInfoMap(data);
+        
+        // Make cycle count clickable if there are cycles
+        const cycleStatItem = document.getElementById('cyclesCount').parentElement;
+        console.log('📊 Cycles found:', data.cycles.length, 'Stat item:', cycleStatItem);
+        
         if (data.cycles.length > 0) {
-            this.displayCycles(data.cycles);
+            cycleStatItem.classList.add('cycle-count-clickable');
+            
+            // Remove existing click listeners by storing reference
+            if (this.cycleClickHandler) {
+                cycleStatItem.removeEventListener('click', this.cycleClickHandler);
+            }
+            
+            // Create and store new click handler
+            this.cycleClickHandler = () => {
+                console.log('🖱️ Cycle count clicked!');
+                this.showModal();
+            };
+            cycleStatItem.addEventListener('click', this.cycleClickHandler);
+            console.log('✅ Click handler added to cycle count');
+            
+        } else {
+            cycleStatItem.classList.remove('cycle-count-clickable');
+            if (this.cycleClickHandler) {
+                cycleStatItem.removeEventListener('click', this.cycleClickHandler);
+                this.cycleClickHandler = null;
+            }
         }
     }
 
-    displayCycles(cycles) {
-        const cyclesList = document.getElementById('cyclesList');
-        const cyclesContent = document.getElementById('cyclesContent');
+    buildNodeInfoMap(data) {
+        const nodeInfo = new Map();
         
-        cyclesContent.innerHTML = '';
-        
-        cycles.forEach((cycle, index) => {
-            const cycleDiv = document.createElement('div');
-            cycleDiv.className = 'cycle-item';
-            
-            const cycleText = cycle.join(' → ') + ' → (cycles back)';
-            cycleDiv.innerHTML = `
-                <strong>Cycle ${index + 1}:</strong><br>
-                ${cycleText}
-            `;
-            
-            cyclesContent.appendChild(cycleDiv);
+        // Add component info
+        data.components.forEach(([name, info]) => {
+            nodeInfo.set(name, info);
         });
         
-        cyclesList.style.display = 'block';
+        // Add state info
+        data.states.forEach(([name, info]) => {
+            nodeInfo.set(name, info);
+        });
+        
+        return nodeInfo;
     }
+
 
     clear() {
         console.log('🧹 Clearing graph...');
         this.svg.selectAll('*').remove();
         document.getElementById('stats').style.display = 'none';
-        document.getElementById('cyclesList').style.display = 'none';
+        this.hideModal(); // Close modal if open
         this.nodes = [];
         this.links = [];
         this.cycles = [];
+        this.nodeInfo = null;
+
+        // Remove cycle count clickable styling and event handler
+        const cycleStatItem = document.getElementById('cyclesCount').parentElement;
+        cycleStatItem.classList.remove('cycle-count-clickable');
+        if (this.cycleClickHandler) {
+            cycleStatItem.removeEventListener('click', this.cycleClickHandler);
+            this.cycleClickHandler = null;
+        }
         
         // Reset zoom safely
         this.transform = d3.zoomIdentity;
@@ -638,6 +686,90 @@ class GraphVisualizer {
         }
         
         console.log('✅ Graph cleared successfully');
+    }
+
+    showModal() {
+        console.log('🔄 showModal called, cycles:', this.cycles);
+        
+        if (!this.cycles || this.cycles.length === 0) {
+            console.log('❌ No cycles to display');
+            return;
+        }
+
+        // Populate modal with cycles
+        const modalContent = document.getElementById('modalCyclesContent');
+        if (!modalContent) {
+            console.error('❌ Modal content element not found');
+            return;
+        }
+        
+        modalContent.innerHTML = '';
+
+        this.cycles.forEach((cycle, index) => {
+            const cycleDiv = document.createElement('div');
+            cycleDiv.className = 'modal-cycle-item';
+            
+            // Build enhanced cycle text with location info
+            const enhancedCycle = cycle.map(node => {
+                // Try to get node info from the last known data
+                const nodeInfo = this.getNodeDisplayInfo(node);
+                return nodeInfo;
+            });
+            
+            const cycleText = enhancedCycle.join(' → ') + ' → (cycles back)';
+            cycleDiv.innerHTML = `
+                <div class="cycle-title">Cycle ${index + 1}</div>
+                <div class="cycle-path">${cycleText}</div>
+            `;
+            
+            modalContent.appendChild(cycleDiv);
+        });
+
+        // Show modal
+        const modal = document.getElementById('cyclesModal');
+        if (modal) {
+            console.log('✅ Showing modal');
+            modal.style.display = 'block';
+        } else {
+            console.error('❌ Modal element not found');
+        }
+    }
+
+    hideModal() {
+        console.log('🚫 hideModal called');
+        const modal = document.getElementById('cyclesModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    getNodeDisplayInfo(node) {
+        if (!this.nodeInfo) {
+            // Fallback if no node info available
+            return node;
+        }
+        
+        const info = this.nodeInfo.get(node);
+        if (!info) {
+            return node;
+        }
+        
+        if (info.type === 'component') {
+            const location = info.filePath && info.lineNumber ? ` (${this.getFileName(info.filePath)}:${info.lineNumber})` : '';
+            return `<strong>${node}</strong>${location}`;
+        } else if (info.type === 'state') {
+            const location = info.filePath && info.lineNumber ? ` (${this.getFileName(info.filePath)}:${info.lineNumber})` : '';
+            return `<em>${node}</em> <small>(${info.stateType}${location})</small>`;
+        }
+        
+        return node;
+    }
+
+    getFileName(filePath) {
+        // Extract just the filename from the full path
+        if (!filePath) return '';
+        const parts = filePath.split('/');
+        return parts[parts.length - 1];
     }
 }
 

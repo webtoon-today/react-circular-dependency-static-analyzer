@@ -99,6 +99,7 @@ class ReactParser {
   analyzeFile(filePath) {
     try {
       console.log(`🔍 Reading file: ${filePath}`);
+      this.currentFilePath = filePath; // Store current file path for location tracking
       const code = fs.readFileSync(filePath, 'utf-8');
       console.log(`📝 File size: ${code.length} characters`);
       
@@ -114,6 +115,7 @@ class ReactParser {
         console.log(`✅ Found React component: ${componentInfo.name} (${componentInfo.type}) at line ${componentInfo.lineNumber}`);
         this.graph.addComponent(componentInfo.name, filePath, componentInfo.lineNumber);
         this.extractStateRelations(ast, componentInfo.name, filePath);
+        this.extractPropsRelations(ast, componentInfo.name, filePath);
       } else {
         console.log(`❌ No React component found in ${path.basename(filePath)}`);
         // Let's check what we actually found
@@ -263,15 +265,19 @@ class ReactParser {
       
       checkNode(node.body);
       
-      const isComponent = hasJSX || hasHooks;
-      console.log(`🔍 Component check: JSX=${hasJSX} ${jsxElements.length > 0 ? `(${jsxElements.slice(0, 3).join(', ')})` : ''}, Hooks=${hasHooks} ${hookCalls.length > 0 ? `(${hookCalls.join(', ')})` : ''} → ${isComponent ? 'COMPONENT' : 'NOT_COMPONENT'}`);
+      // A React component must have JSX. 
+      // Functions with only hooks (no JSX) are custom hooks, not components
+      const isComponent = hasJSX;
+      console.log(`🔍 Component check: JSX=${hasJSX} ${jsxElements.length > 0 ? `(${jsxElements.slice(0, 3).join(', ')})` : ''}, Hooks=${hasHooks} ${hookCalls.length > 0 ? `(${hookCalls.join(', ')})` : ''} → ${isComponent ? 'COMPONENT' : hasHooks ? 'CUSTOM_HOOK' : 'NOT_COMPONENT'}`);
       
     } catch (error) {
       console.log(`❌ Error checking component: ${error.message}`);
       return false;
     }
 
-    return hasJSX || hasHooks;
+    // Only consider it a React component if it returns JSX
+    // Custom hooks (functions with hooks but no JSX) should not be treated as components
+    return hasJSX;
   }
 
   isReactClassComponent(node) {
@@ -354,11 +360,12 @@ class ReactParser {
       if (stateVar && setterVar) {
         const stateName = stateVar.name;
         const setterName = setterVar.name;
+        const lineNumber = path.node.loc ? path.node.loc.start.line : null;
         
-        console.log(`📦 useState: ${stateName} with setter ${setterName} in ${componentName}`);
+        console.log(`📦 useState: ${stateName} with setter ${setterName} in ${componentName} at line ${lineNumber}`);
         
-        // Add the actual state variable as a state node
-        this.graph.addState(stateName, componentName, 'useState');
+        // Add the actual state variable as a state node with location
+        this.graph.addState(stateName, componentName, 'useState', this.currentFilePath, lineNumber);
         
         // Create edge: Component uses State
         this.graph.addEdge(componentName, `${componentName}.${stateName}`, 'reads');
@@ -410,7 +417,8 @@ class ReactParser {
   }
 
   handleSetState(path, componentName) {
-    this.graph.addState('state', componentName, 'setState');
+    const lineNumber = path.node.loc ? path.node.loc.start.line : null;
+    this.graph.addState('state', componentName, 'setState', this.currentFilePath, lineNumber);
     this.graph.addEdge(componentName, `${componentName}.state`, 'updates');
   }
 
@@ -458,7 +466,8 @@ class ReactParser {
             // Also add the state if it doesn't exist (might be from another component)
             if (!self.graph.states.has(stateKey)) {
               console.log(`   ➕ Adding inferred state: ${stateName}`);
-              self.graph.addState(stateName, componentName, 'inferred');
+              const lineNumber = path.node.loc ? path.node.loc.start.line : null;
+              self.graph.addState(stateName, componentName, 'inferred', self.currentFilePath, lineNumber);
             }
           }
         }
@@ -470,6 +479,7 @@ class ReactParser {
     console.log(`🔮 Processing Recoil hook in ${componentName}`);
     const hookName = path.node.callee.name;
     const args = path.node.arguments;
+    const lineNumber = path.node.loc ? path.node.loc.start.line : null;
     
     if (args.length > 0) {
       // Try to get the atom name from the first argument
@@ -480,11 +490,11 @@ class ReactParser {
         atomName = 'member.' + (args[0].property.name || 'unknown');
       }
       
-      console.log(`🔮 Recoil atom: ${atomName} accessed via ${hookName}`);
+      console.log(`🔮 Recoil atom: ${atomName} accessed via ${hookName} at line ${lineNumber}`);
       
-      // Add the atom as a state (shared across components)
+      // Add the atom as a state (shared across components) with location
       const stateKey = `global.${atomName}`;
-      this.graph.addState(atomName, 'global', hookName);
+      this.graph.addState(atomName, 'global', hookName, this.currentFilePath, lineNumber);
       
       // Create appropriate edges based on hook type
       if (hookName === 'useRecoilValue') {
@@ -502,7 +512,8 @@ class ReactParser {
 
   handleCustomHook(path, componentName) {
     const hookName = path.node.callee.name;
-    console.log(`🎣 Processing custom hook: ${hookName} in ${componentName}`);
+    const lineNumber = path.node.loc ? path.node.loc.start.line : null;
+    console.log(`🎣 Processing custom hook: ${hookName} in ${componentName} at line ${lineNumber}`);
     
     // Find what this custom hook returns by looking at the variable assignment
     const parent = path.parent;
@@ -515,7 +526,7 @@ class ReactParser {
             // First element is usually state, setter functions are not state
             if (index === 0 || !varName.startsWith('set')) {
               console.log(`   📦 Custom hook returns state variable: ${varName}`);
-              this.graph.addState(varName, componentName, 'custom-hook');
+              this.graph.addState(varName, componentName, 'custom-hook', this.currentFilePath, lineNumber);
               // Component reads this state
               this.graph.addEdge(`${componentName}.${varName}`, componentName, 'reads');
             }
@@ -539,7 +550,7 @@ class ReactParser {
                 !stateName.includes('Handler') &&
                 !stateName.includes('Callback')) {
               console.log(`   📦 Custom hook returns state variable: ${stateName}`);
-              this.graph.addState(stateName, componentName, 'custom-hook');
+              this.graph.addState(stateName, componentName, 'custom-hook', this.currentFilePath, lineNumber);
               // Component reads this state
               this.graph.addEdge(`${componentName}.${stateName}`, componentName, 'reads');
             }
@@ -549,7 +560,7 @@ class ReactParser {
         // Simple assignment: const data = useCustomHook()
         const varName = parent.id.name;
         console.log(`   📦 Custom hook returns state variable: ${varName}`);
-        this.graph.addState(varName, componentName, 'custom-hook');
+        this.graph.addState(varName, componentName, 'custom-hook', this.currentFilePath, lineNumber);
         // Component reads this state
         this.graph.addEdge(`${componentName}.${varName}`, componentName, 'reads');
       }
@@ -557,6 +568,125 @@ class ReactParser {
       // Hook called without assignment - just log for debugging
       console.log(`   ⚠️ Custom hook ${hookName} called without variable assignment`);
     }
+  }
+
+  extractPropsRelations(ast, componentName, filePath) {
+    const self = this;
+    let jsxElementsFound = 0;
+    let propsPassedCount = 0;
+    
+    console.log(`🔗 Extracting props relations for component: ${componentName}`);
+    
+    traverse(ast, {
+      JSXElement(path) {
+        jsxElementsFound++;
+        const elementName = self.getJSXElementName(path.node);
+        
+        if (elementName && self.isPotentialComponent(elementName)) {
+          console.log(`   📦 Found JSX element: ${elementName}`);
+          
+          // Analyze props passed to this element
+          const props = self.analyzeJSXProps(path.node, componentName);
+          propsPassedCount += props.length;
+          
+          props.forEach(prop => {
+            if (prop.type === 'data') {
+              console.log(`   📤 ${componentName} passes data "${prop.name}" to ${elementName}`);
+              // Track data flow: Parent component -> Child component (via props)
+              self.graph.addEdge(componentName, elementName, 'passes-props');
+            } else if (prop.type === 'callback') {
+              console.log(`   📞 ${componentName} passes callback "${prop.name}" to ${elementName}`);
+              // Track callback flow: Child component -> Parent component (via callback)
+              self.graph.addEdge(elementName, componentName, 'calls-callback');
+            }
+          });
+        }
+      }
+    });
+    
+    console.log(`📊 Props summary for ${componentName}: ${jsxElementsFound} JSX elements, ${propsPassedCount} props passed`);
+  }
+
+  getJSXElementName(jsxElement) {
+    if (jsxElement.openingElement && jsxElement.openingElement.name) {
+      if (t.isJSXIdentifier(jsxElement.openingElement.name)) {
+        return jsxElement.openingElement.name.name;
+      } else if (t.isJSXMemberExpression(jsxElement.openingElement.name)) {
+        // Handle cases like <Foo.Bar />
+        return `${jsxElement.openingElement.name.object.name}.${jsxElement.openingElement.name.property.name}`;
+      }
+    }
+    return null;
+  }
+
+  isPotentialComponent(elementName) {
+    // Component names start with uppercase letter
+    // Exclude native HTML elements
+    const htmlElements = ['div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
+                         'button', 'input', 'form', 'img', 'a', 'ul', 'li', 'ol',
+                         'table', 'tr', 'td', 'th', 'thead', 'tbody', 'section',
+                         'header', 'footer', 'nav', 'main', 'article', 'aside'];
+    
+    // React Native elements
+    const reactNativeElements = ['View', 'Text', 'ScrollView', 'TouchableOpacity', 
+                                'TouchableHighlight', 'TouchableWithoutFeedback', 
+                                'Image', 'TextInput', 'Button', 'Switch', 'Slider',
+                                'ActivityIndicator', 'Modal', 'Alert', 'Dimensions',
+                                'SafeAreaView', 'StatusBar', 'FlatList', 'SectionList'];
+    
+    if (htmlElements.includes(elementName.toLowerCase()) || 
+        reactNativeElements.includes(elementName)) {
+      return false;
+    }
+    
+    // Must start with uppercase (React convention)
+    return /^[A-Z]/.test(elementName);
+  }
+
+  analyzeJSXProps(jsxElement, parentComponent) {
+    const props = [];
+    
+    if (jsxElement.openingElement && jsxElement.openingElement.attributes) {
+      jsxElement.openingElement.attributes.forEach(attr => {
+        if (t.isJSXAttribute(attr) && t.isJSXIdentifier(attr.name)) {
+          const propName = attr.name.name;
+          const propType = this.determinePropType(propName, attr.value);
+          
+          props.push({
+            name: propName,
+            type: propType
+          });
+        }
+      });
+    }
+    
+    return props;
+  }
+
+  determinePropType(propName, propValue) {
+    // Callbacks typically start with 'on' or contain 'callback', 'handler'
+    if (propName.startsWith('on') || 
+        propName.includes('callback') || 
+        propName.includes('handler') ||
+        propName.includes('Handle')) {
+      return 'callback';
+    }
+    
+    // Check if the value is a function expression
+    if (propValue && t.isJSXExpressionContainer(propValue)) {
+      const expression = propValue.expression;
+      if (t.isArrowFunctionExpression(expression) || 
+          t.isFunctionExpression(expression)) {
+        return 'callback';
+      }
+      
+      // Check for function calls that might be callbacks
+      if (t.isCallExpression(expression)) {
+        return 'callback';
+      }
+    }
+    
+    return 'data';
   }
 }
 

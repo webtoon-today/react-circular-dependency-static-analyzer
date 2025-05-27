@@ -65,7 +65,8 @@ program
               if (nodeInfo.type === 'component') {
                 console.log(chalk.yellow(`  📦 ${node} (${nodeInfo.filePath}:${nodeInfo.lineNumber})${arrow}`));
               } else {
-                console.log(chalk.cyan(`  🔧 ${node} (${nodeInfo.stateType})${arrow}`));
+                const location = nodeInfo.filePath && nodeInfo.lineNumber ? ` at ${nodeInfo.filePath}:${nodeInfo.lineNumber}` : '';
+                console.log(chalk.cyan(`  🔧 ${node} (${nodeInfo.stateType}${location})${arrow}`));
               }
             } else {
               console.log(chalk.gray(`  ❓ ${node}${arrow}`));
