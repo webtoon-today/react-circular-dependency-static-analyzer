@@ -130,9 +130,10 @@ class GraphVisualizer {
                 throw new Error(`File scanning failed: ${fileListResponse.statusText}`);
             }
 
-            const { files, totalFiles } = await fileListResponse.json();
+            const { sessionId, files, totalFiles } = await fileListResponse.json();
             console.log(`✅ Found ${totalFiles} React files to analyze`);
             console.log('📁 Sample files:', files.slice(0, 5));
+            console.log('🔑 Session ID:', sessionId);
             
             if (totalFiles === 0) {
                 console.warn('⚠️ No React files found in the specified directory');
@@ -142,7 +143,6 @@ class GraphVisualizer {
 
             // Analyze files one by one with progress updates
             console.log('🔍 Step 2: Starting individual file analysis...');
-            let parserState = null;
             let processedFiles = 0;
             const startAnalysis = Date.now();
 
@@ -158,14 +158,14 @@ class GraphVisualizer {
                     const response = await fetch('/api/analyze-file', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ filePath, parser: parserState })
+                        body: JSON.stringify({ filePath, sessionId })
                     });
 
                     const fileTime = Date.now() - fileStartTime;
                     
                     if (response.ok) {
-                        parserState = await response.json();
-                        console.log(`✅ ${fileName} analyzed in ${fileTime}ms - Components: ${parserState.components.length}, States: ${parserState.states.length}`);
+                        const result = await response.json();
+                        console.log(`✅ ${fileName} analyzed in ${fileTime}ms - Components: ${result.componentsCount}, States: ${result.statesCount}`);
                     } else {
                         console.warn(`⚠️ ${fileName} analysis failed:`, response.status, response.statusText);
                     }
@@ -188,36 +188,34 @@ class GraphVisualizer {
             
             console.log(`⏱️ Total file analysis took ${Date.now() - startAnalysis}ms`);
 
-            if (parserState) {
-                // Calculate cycles
-                console.log('🔄 Step 3: Finding circular dependencies...');
-                this.updateProgress(totalFiles, totalFiles, 'Finding circular dependencies...');
-                
-                const cycleStartTime = Date.now();
-                const cycles = this.findCycles(parserState.components, parserState.states, parserState.edges);
-                console.log(`⏱️ Cycle detection took ${Date.now() - cycleStartTime}ms`);
-                
-                const graph = {
-                    components: parserState.components,
-                    states: parserState.states,
-                    edges: parserState.edges,
-                    cycles: cycles
-                };
+            // Get final results from server
+            console.log('🔄 Step 3: Getting final results and finding circular dependencies...');
+            this.updateProgress(totalFiles, totalFiles, 'Finding circular dependencies...');
+            
+            const resultsStartTime = Date.now();
+            const resultsResponse = await fetch('/api/get-results', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId })
+            });
 
-                console.log('📊 Final Results:');
-                console.log(`   • Components: ${graph.components.length}`);
-                console.log(`   • States: ${graph.states.length}`);
-                console.log(`   • Edges: ${graph.edges.length}`);
-                console.log(`   • Cycles: ${graph.cycles.length}`);
-
-                console.log('🎨 Step 4: Rendering graph...');
-                this.renderGraph(graph);
-                this.updateStats(graph);
-                console.log('✅ Analysis complete!');
-            } else {
-                console.warn('⚠️ No parser state - no valid React components found');
-                alert('No valid React components found.');
+            if (!resultsResponse.ok) {
+                throw new Error(`Results generation failed: ${resultsResponse.statusText}`);
             }
+
+            const graph = await resultsResponse.json();
+            console.log(`⏱️ Results generation took ${Date.now() - resultsStartTime}ms`);
+
+            console.log('📊 Final Results:');
+            console.log(`   • Components: ${graph.components.length}`);
+            console.log(`   • States: ${graph.states.length}`);
+            console.log(`   • Edges: ${graph.edges.length}`);
+            console.log(`   • Cycles: ${graph.cycles.length}`);
+
+            console.log('🎨 Step 4: Rendering graph...');
+            this.renderGraph(graph);
+            this.updateStats(graph);
+            console.log('✅ Analysis complete!');
 
         } catch (error) {
             console.error('💥 Analysis error:', error);
