@@ -1,0 +1,52 @@
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Development dependencies
+nodemon.json
+.eslintrc*
+.prettierrc*
+tsconfig.json
+
+# Documentation
+docs/
+examples/
+screenshots/
+
+# CI/CD
+.travis.yml
+.circleci/
+.github/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
