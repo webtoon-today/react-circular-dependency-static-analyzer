@@ -323,7 +323,12 @@ class ReactParser {
           self.handleRecoilHook(path, componentName);
         } else if (t.isIdentifier(path.node.callee)) {
           const name = path.node.callee.name;
-          if (name.startsWith('use') && name.length > 3 && name !== 'useEffect' && name !== 'useState') {
+          if (name.startsWith('use') && name.length > 3 && 
+              name !== 'useEffect' && 
+              name !== 'useState' && 
+              name !== 'useCallback' && 
+              name !== 'useMemo' &&
+              !name.startsWith('useRecoil')) {
             console.log(`🎣 Found custom hook: ${name} in ${componentName}`);
             self.handleCustomHook(path, componentName);
           }
@@ -339,7 +344,7 @@ class ReactParser {
       }
     });
     
-    console.log(`📊 State summary for ${componentName}: ${stateCount} useState, ${effectCount} useEffect, ${memoCount} memo hooks, ${setStateCount} setState`);
+    console.log(`📊 State summary for ${componentName}: ${stateCount} state variables, ${effectCount} useEffect, ${memoCount} memo hooks, ${setStateCount} setState`);
   }
 
   handleUseState(path, componentName) {
@@ -499,35 +504,58 @@ class ReactParser {
     const hookName = path.node.callee.name;
     console.log(`🎣 Processing custom hook: ${hookName} in ${componentName}`);
     
-    // Check if this custom hook is being destructured (likely returning state)
+    // Find what this custom hook returns by looking at the variable assignment
     const parent = path.parent;
     if (t.isVariableDeclarator(parent)) {
       if (t.isArrayPattern(parent.id)) {
         // Hook returns array: const [data, setData] = useCustomHook()
-        const [stateVar] = parent.id.elements;
-        if (stateVar && t.isIdentifier(stateVar)) {
-          const stateName = stateVar.name;
-          console.log(`   📦 Custom hook returns state: ${stateName}`);
-          this.graph.addState(stateName, componentName, 'custom-hook');
-          this.graph.addEdge(`${componentName}.${stateName}`, componentName, 'custom-state-dependency');
-        }
+        parent.id.elements.forEach((element, index) => {
+          if (element && t.isIdentifier(element)) {
+            const varName = element.name;
+            // First element is usually state, setter functions are not state
+            if (index === 0 || !varName.startsWith('set')) {
+              console.log(`   📦 Custom hook returns state variable: ${varName}`);
+              this.graph.addState(varName, componentName, 'custom-hook');
+              // Component reads this state
+              this.graph.addEdge(`${componentName}.${varName}`, componentName, 'reads');
+            }
+          }
+        });
       } else if (t.isObjectPattern(parent.id)) {
-        // Hook returns object: const {data, loading} = useCustomHook()
+        // Hook returns object: const {data, loading, error} = useCustomHook()
         parent.id.properties.forEach(prop => {
-          if (t.isObjectProperty(prop) && t.isIdentifier(prop.key)) {
-            const stateName = prop.key.name;
-            console.log(`   📦 Custom hook returns state: ${stateName}`);
-            this.graph.addState(stateName, componentName, 'custom-hook');
-            this.graph.addEdge(`${componentName}.${stateName}`, componentName, 'custom-state-dependency');
+          if (t.isObjectProperty(prop)) {
+            let stateName;
+            
+            // Handle both { data } and { data: localData } patterns
+            if (t.isIdentifier(prop.key)) {
+              stateName = prop.key.name;
+            }
+            
+            // Exclude common function names
+            if (stateName && 
+                !stateName.startsWith('set') && 
+                !stateName.startsWith('on') && 
+                !stateName.includes('Handler') &&
+                !stateName.includes('Callback')) {
+              console.log(`   📦 Custom hook returns state variable: ${stateName}`);
+              this.graph.addState(stateName, componentName, 'custom-hook');
+              // Component reads this state
+              this.graph.addEdge(`${componentName}.${stateName}`, componentName, 'reads');
+            }
           }
         });
       } else if (t.isIdentifier(parent.id)) {
         // Simple assignment: const data = useCustomHook()
-        const stateName = parent.id.name;
-        console.log(`   📦 Custom hook returns state: ${stateName}`);
-        this.graph.addState(stateName, componentName, 'custom-hook');
-        this.graph.addEdge(`${componentName}.${stateName}`, componentName, 'custom-state-dependency');
+        const varName = parent.id.name;
+        console.log(`   📦 Custom hook returns state variable: ${varName}`);
+        this.graph.addState(varName, componentName, 'custom-hook');
+        // Component reads this state
+        this.graph.addEdge(`${componentName}.${varName}`, componentName, 'reads');
       }
+    } else {
+      // Hook called without assignment - just log for debugging
+      console.log(`   ⚠️ Custom hook ${hookName} called without variable assignment`);
     }
   }
 }
