@@ -1,0 +1,63 @@
+{
+  "name": "@webtoon-today/react-circular-dependency-analyzer",
+  "version": "1.0.0",
+  "description": "Static analysis tool to detect circular state dependencies in React projects that can cause infinite re-renders, memory leaks, and performance issues",
+  "main": "src/index.js",
+  "bin": {
+    "react-analyzer": "./src/cli.js",
+    "rca": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "web": "node src/server.js",
+    "web:dev": "nodemon src/server.js",
+    "test": "jest",
+    "prepublishOnly": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/webtoon-today/react-circular-dependency-static-analyzer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/webtoon-today/react-circular-dependency-static-analyzer/issues"
+  },
+  "homepage": "https://github.com/webtoon-today/react-circular-dependency-static-analyzer#readme",
+  "dependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/parser": "^7.23.0",
+    "@babel/traverse": "^7.23.0",
+    "@babel/types": "^7.23.0",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.2",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.0"
+  },
+  "keywords": [
+    "react",
+    "static-analysis", 
+    "circular-dependency",
+    "state-management",
+    "hooks",
+    "recoil",
+    "performance",
+    "infinite-render",
+    "react-native",
+    "typescript",
+    "jsx"
+  ],
+  "author": "Webtoon Today",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "src/",
+    "public/",
+    "README.md",
+    "LICENSE"
+  ]
+}
