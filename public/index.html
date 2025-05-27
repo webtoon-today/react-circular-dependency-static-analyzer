@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>React Circular Dependency Analyzer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100vw;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.8em;
+            font-weight: 300;
+        }
+
+        .header p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+
+        .controls {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input, button, select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5a6fd8;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        .progress-container {
+            margin-top: 20px;
+            padding: 0 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f3f3f3;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: #667eea;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-text {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .current-file {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #888;
+            word-break: break-all;
+            max-height: 40px;
+            overflow: hidden;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #graph-container {
+            position: relative;
+            flex: 1;
+            min-height: 500px;
+            background: #fafafa;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #graph:active {
+            cursor: grabbing;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 1000;
+        }
+
+        .zoom-btn {
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .zoom-btn:hover {
+            background: white;
+        }
+
+        .legend {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #dee2e6;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+        }
+
+        .stats {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            flex-shrink: 0;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .cycles-list {
+            padding: 20px 30px;
+            background: #fff3cd;
+            border-top: 1px solid #dee2e6;
+            display: none;
+        }
+
+        .cycles-list h3 {
+            margin-top: 0;
+            color: #721c24;
+            font-size: 1.2em;
+        }
+
+        .cycle-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #dc3545;
+        }
+
+        .node {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .node:hover {
+            stroke-width: 3px;
+        }
+
+        .link {
+            fill: none;
+            stroke-width: 2;
+            transition: all 0.3s;
+        }
+
+        .link.cycle {
+            stroke: #dc3545;
+            stroke-width: 3;
+            stroke-dasharray: 5,5;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 React Circular Dependency Analyzer</h1>
+            <p>Visualize state dependencies and detect circular patterns in your React components</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="entryPath">Entry Path:</label>
+                <input type="text" id="entryPath" placeholder="/path/to/react/project" value="">
+            </div>
+            <div class="control-group">
+                <label for="ignorePaths">Ignore Paths:</label>
+                <input type="text" id="ignorePaths" placeholder="node_modules,dist,build,.next" value="ios,android,node_modules,dist,build,.next,coverage,public,docs">
+            </div>
+            <div class="control-group">
+                <button id="analyzeBtn">Analyze Project</button>
+                <button id="clearBtn">Clear</button>
+            </div>
+            <div class="control-group">
+                <label for="layoutType">Layout:</label>
+                <select id="layoutType">
+                    <option value="force">Force Directed</option>
+                    <option value="bipartite">Bipartite</option>
+                    <option value="hierarchical">Hierarchical</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="loading">
+            <div class="loading-spinner"></div>
+            <div>Analyzing React project...</div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Scanning files...</div>
+                <div class="current-file" id="currentFile"></div>
+            </div>
+        </div>
+
+        <div id="graph-container">
+            <svg id="graph"></svg>
+            <div class="zoom-controls">
+                <button class="zoom-btn" id="zoomIn" title="Zoom In">+</button>
+                <button class="zoom-btn" id="zoomOut" title="Zoom Out">−</button>
+                <button class="zoom-btn" id="zoomReset" title="Reset Zoom">⌂</button>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #667eea;"></div>
+                    <span>Components</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #28a745;"></div>
+                    <span>States</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #dc3545;"></div>
+                    <span>Circular Dependency</span>
+                </div>
+            </div>
+            <div class="tooltip"></div>
+        </div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-item">
+                <div class="stat-number" id="componentsCount">0</div>
+                <div class="stat-label">Components</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="statesCount">0</div>
+                <div class="stat-label">States</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="edgesCount">0</div>
+                <div class="stat-label">Dependencies</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="cyclesCount">0</div>
+                <div class="stat-label">Circular Dependencies</div>
+            </div>
+        </div>
+
+        <div class="cycles-list" id="cyclesList">
+            <h3>🔄 Detected Circular Dependencies</h3>
+            <div id="cyclesContent"></div>
+        </div>
+    </div>
+
+    <script src="graph.js"></script>
+</body>
+</html>
